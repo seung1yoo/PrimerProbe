@@ -3,6 +3,7 @@ from pathlib import Path
 from itertools import product
 from Bio import SeqIO
 import gzip
+import csv
 
 
 class Identifier:
@@ -56,9 +57,9 @@ class Identifier:
         for fastq_file in data_path.glob("*.fastq.gz"):
             sample_name = fastq_file.name.split("_")[0]
             if str(fastq_file).endswith("_1.fastq.gz"):
-                self.fastq_dic.setdefault(sample_name, {}).setdefault("r1", fastq_file)
+                self.fastq_dic.setdefault(sample_name, {}).setdefault("r1", fastq_file.resolve())
             elif str(fastq_file).endswith("_2.fastq.gz"):
-                self.fastq_dic.setdefault(sample_name, {}).setdefault("r2", fastq_file)
+                self.fastq_dic.setdefault(sample_name, {}).setdefault("r2", fastq_file.resolve())
             else:
                 self.fastq_dic.setdefault(sample_name, {}).setdefault("unknown", fastq_file)
         return 1
@@ -88,37 +89,137 @@ class Identifier:
         keys_with_max_value = [key for key, value in self.primer_counting_dic.items() if value == max_value]
         return ';'.join(keys_with_max_value)
 
+    def parse_fastp_table(self, fn):
+        for line in open(fn):
+            items = line.rstrip('\n').split('\t')
+            if items[0] in ["Samples"]:
+                idx_dic = dict()
+                for idx, item in enumerate(items):
+                    idx_dic.setdefault(item, idx)
+                continue
+            sample_name = items[idx_dic["Samples"]]
+            read_count = items[idx_dic["ReadsCount"]]
+            good_rate = items[idx_dic["GoodReadRate"]]
+            r1_mean_len = items[idx_dic["R1MeanLen"]]
+            r2_mean_len = items[idx_dic["R2MeanLen"]]
+            self.fastq_info_dic.setdefault(sample_name, {}).setdefault("read_count", read_count)
+            self.fastq_info_dic.setdefault(sample_name, {}).setdefault("good_rate", good_rate)
+            self.fastq_info_dic.setdefault(sample_name, {}).setdefault("r1_mean_len", r1_mean_len)
+            self.fastq_info_dic.setdefault(sample_name, {}).setdefault("r2_mean_len", r2_mean_len)
+        return 1
+
+    def parse_meta_table(self, fn):
+        for line in open(fn):
+            items = line.rstrip('\n').split('\t')
+            if items[0] in ["sampleID"]:
+                idx_dic = dict()
+                for idx, item in enumerate(items):
+                    idx_dic.setdefault(item, idx)
+                continue
+            sample_name = items[idx_dic["sampleID"]]
+            project_id = items[idx_dic["projectID"]]
+            race = items[idx_dic["Race"]]
+            continent = items[idx_dic["Continent"]]
+            self.meta_info_dic.setdefault(sample_name, {}).setdefault("project_id", project_id)
+            self.meta_info_dic.setdefault(sample_name, {}).setdefault("race", race)
+            self.meta_info_dic.setdefault(sample_name, {}).setdefault("continent", continent)
+        return 1
 
 
 def main():
-    data_path = Path("../20240206")
-    #data_path = Path("../20240126_test")
     instance = Identifier()
-    instance.load_data_path(data_path)
-    #print(instance.fastq_dic)
+    instance.load_data_path(Path("../20240206"))
+    instance.load_data_path(Path("../20240126_test"))
     instance.add_primer_info("V3-V4", "CCTACGGGNGGCWGCAG", "GACTACHVGGGTATCTAATCC")
-    instance.add_primer_info("V4", "GTGYCAGCMGCCGCGGTAA", "GACTACHVGGGTATCTAATCC")
+    instance.add_primer_info("V4", "GTGCCAGCMGCCGCGGTAA", "GGACTACHVGGGTWTCTAAT")
+    instance.add_primer_info("V1-V3", "AGAGTTTGATCMTGGCTCAG", "CTGCTGCCTYCCGTA")
+    instance.add_primer_info("V4-V5", "GTGYCAGCMGCCGCGGTAA", "GGACTACNVGGGTHTCTAAT")
+    instance.add_primer_info("V5-V6", "GYACWCACCWGAGCTG", "CCGTCACCTTGTTACGACTT")
+    instance.add_primer_info("V6-V8", "AACGCGAAGAACCTTAC", "CGGTGTGTACAAGACCC")
     instance.add_primer_info("ITS1", "CTTGGTCATTTAGAGGAAGTAA", "GCTGCGTTCTTCATCGATGC")
     instance.add_primer_info("ITS2", "GCATCGATGAAGAACGCAGC", "TCCTCCGCTTATTGATATGC")
-    #print(instance.primer_dic)
+    primer_set_s = ["V3-V4","V4","V1-V3","V4-V5","V5-V6","V6-V8","ITS1","ITS2"]
+
+    instance.fastq_info_dic = dict()
+    instance.parse_fastp_table("../20240206/fastp.summary.tsv") # optional
+    instance.parse_fastp_table("../20240126_test/fastp.summary.tsv") # optional
+
+    instance.meta_info_dic = dict()
+    instance.parse_meta_table("metadata_global.tsv") # optional
+
     outfn = "result_identifying_16S_primer.xls"
     outfh = open(outfn, "w")
     items = ["sample_name"]
-    items.extend(["V3-V4","V4","ITS1","ITS2"])
+    items.extend(primer_set_s)
     items.append("most_primer")
+    items.append("read_count") # optional
+    items.append("good_rate") # optional
+    items.append("mean_len") # optional
+    items.append("project_id") # optional
+    items.append("race") # optional
+    items.append("continent") # optional
     outfh.write("{0}\n".format("\t".join(items)))
     for sample_name, path_dic in instance.fastq_dic.items():
         instance.primer_counting_dic = dict()
         instance.counting_primers(path_dic, 'r1', 1000)
         instance.counting_primers(path_dic, 'r2', 1000)
         items = [sample_name]
-        items.append(instance.primer_counting_dic["V3-V4"])
-        items.append(instance.primer_counting_dic["V4"])
-        items.append(instance.primer_counting_dic["ITS1"])
-        items.append(instance.primer_counting_dic["ITS2"])
+        for primer_set in primer_set_s:
+            items.append(instance.primer_counting_dic[primer_set])
         items.append(instance.who_am_i())
+        if sample_name in instance.fastq_info_dic:
+            items.append(instance.fastq_info_dic[sample_name]['read_count'])
+            items.append(instance.fastq_info_dic[sample_name]['good_rate'])
+            items.append(instance.fastq_info_dic[sample_name]['r1_mean_len'])
+        else:
+            items.append("NA")
+            items.append("NA")
+            items.append("NA")
+        if sample_name in instance.meta_info_dic:
+            items.append(instance.meta_info_dic[sample_name]['project_id'])
+            items.append(instance.meta_info_dic[sample_name]['race'])
+            items.append(instance.meta_info_dic[sample_name]['continent'])
+        else:
+            items.append("NA")
+            items.append("NA")
+            items.append("NA")
+        print(items)
         outfh.write("{0}\n".format("\t".join([str(x) for x in items])))
     outfh.close()
+
+
+    # optional
+    usable_samples = list()
+    for line in open("usable_sample_list"):
+        usable_samples.append(line.strip())
+
+    outfn = "samplesheet.csv"
+    outfh = open(outfn, "w")
+    headers = ["sampleID","forwardReads","reverseReads","run"]
+    writer = csv.DictWriter(outfh, fieldnames=headers)
+    writer.writeheader()
+    for sample_name in usable_samples:
+        row_dic = dict()
+        row_dic.setdefault("sampleID", sample_name)
+        row_dic.setdefault("forwardReads", instance.fastq_dic[sample_name]["r1"])
+        row_dic.setdefault("reverseReads", instance.fastq_dic[sample_name]["r2"])
+        row_dic.setdefault("run", "1")
+        writer.writerow(row_dic)
+    outfh.close()
+
+    outfn = "metadata.tsv"
+    outfh = open(outfn, "w")
+    headers = ["sampleID","projectID","Race","Continent"]
+    outfh.write("{0}\n".format("\t".join(headers)))
+    for sample_name in usable_samples:
+        items = [sample_name]
+        items.append(instance.meta_info_dic[sample_name]['project_id'])
+        items.append(instance.meta_info_dic[sample_name]['race'])
+        items.append(instance.meta_info_dic[sample_name]['continent'])
+        outfh.write("{0}\n".format("\t".join(items)))
+    outfh.close()
+
+
 
 
 
