@@ -189,16 +189,18 @@ def main():
 
 
     # optional
-    usable_samples = list()
-    for line in open("usable_sample_list"):
-        usable_samples.append(line.strip())
+    unusable_samples = list()
+    for line in open("unusable_samples_merge"):
+        unusable_samples.append(line.strip())
 
     outfn = "samplesheet.csv"
     outfh = open(outfn, "w")
     headers = ["sampleID","forwardReads","reverseReads","run"]
     writer = csv.DictWriter(outfh, fieldnames=headers)
     writer.writeheader()
-    for sample_name in usable_samples:
+    for sample_name in sorted(instance.fastq_dic):
+        if sample_name in unusable_samples:
+            continue
         row_dic = dict()
         row_dic.setdefault("sampleID", sample_name)
         row_dic.setdefault("forwardReads", instance.fastq_dic[sample_name]["r1"])
@@ -211,7 +213,9 @@ def main():
     outfh = open(outfn, "w")
     headers = ["sampleID","projectID","Race","Continent"]
     outfh.write("{0}\n".format("\t".join(headers)))
-    for sample_name in usable_samples:
+    for sample_name in sorted(instance.fastq_dic):
+        if sample_name in unusable_samples:
+            continue
         items = [sample_name]
         items.append(instance.meta_info_dic[sample_name]['project_id'])
         items.append(instance.meta_info_dic[sample_name]['race'])
