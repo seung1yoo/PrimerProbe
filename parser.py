@@ -125,7 +125,11 @@ class Identifier:
             sample_name = items[idx_dic["sampleID"]]
             project_id = items[idx_dic["projectID"]]
             race = items[idx_dic["Race"]]
+            if race in ["uncalculated", ""]:
+                race = "NA"
             continent = items[idx_dic["Continent"]]
+            if continent in ["uncalculated", ""]:
+                continent = "NA"
             self.meta_info_dic.setdefault(sample_name, {}).setdefault("project_id", project_id)
             self.meta_info_dic.setdefault(sample_name, {}).setdefault("race", race)
             self.meta_info_dic.setdefault(sample_name, {}).setdefault("continent", continent)
@@ -155,52 +159,67 @@ def main():
     instance.parse_meta_table("metadata_global4464.tsv") # optional
 
     outfn = "result_identifying_16S_primer.xls"
-    logging.info(f"write the result of 16S primer identification into {outfn}")
-    outfh = open(outfn, "w")
-    items = ["sample_name"]
-    items.extend(primer_set_s)
-    items.append("most_primer")
-    items.append("read_count") # optional
-    items.append("good_rate") # optional
-    items.append("mean_len") # optional
-    items.append("project_id") # optional
-    items.append("race") # optional
-    items.append("continent") # optional
-    outfh.write("{0}\n".format("\t".join(items)))
-    for sample_name, path_dic in instance.fastq_dic.items():
-        instance.primer_counting_dic = dict()
-        instance.counting_primers(path_dic, 'r1', 1000)
-        instance.counting_primers(path_dic, 'r2', 1000)
-        items = [sample_name]
-        for primer_set in primer_set_s:
-            items.append(instance.primer_counting_dic[primer_set])
-        items.append(instance.who_am_i())
-        if sample_name in instance.fastq_info_dic:
-            items.append(instance.fastq_info_dic[sample_name]['read_count'])
-            items.append(instance.fastq_info_dic[sample_name]['good_rate'])
-            items.append(instance.fastq_info_dic[sample_name]['r1_mean_len'])
-        else:
-            items.append("NA")
-            items.append("NA")
-            items.append("NA")
-            logging.warning(f"{sample_name} has not fastp info.")
-        if sample_name in instance.meta_info_dic:
-            items.append(instance.meta_info_dic[sample_name]['project_id'])
-            items.append(instance.meta_info_dic[sample_name]['race'])
-            items.append(instance.meta_info_dic[sample_name]['continent'])
-        else:
-            items.append("NA")
-            items.append("NA")
-            items.append("NA")
-            logging.warning(f"{sample_name} has not metadata info.")
-        outfh.write("{0}\n".format("\t".join([str(x) for x in items])))
-    outfh.close()
+    if Path(outfn).exists():
+        logging.info(f"{outfn} is exists. PASS the task.")
+    else:
+        logging.info(f"write the result of 16S primer identification into {outfn}")
+        outfh = open(outfn, "w")
+        items = ["sample_name"]
+        items.extend(primer_set_s)
+        items.append("most_primer")
+        items.append("read_count") # optional
+        items.append("good_rate") # optional
+        items.append("mean_len") # optional
+        items.append("project_id") # optional
+        items.append("race") # optional
+        items.append("continent") # optional
+        outfh.write("{0}\n".format("\t".join(items)))
+        for sample_name, path_dic in instance.fastq_dic.items():
+            instance.primer_counting_dic = dict()
+            instance.counting_primers(path_dic, 'r1', 1000)
+            instance.counting_primers(path_dic, 'r2', 1000)
+            items = [sample_name]
+            for primer_set in primer_set_s:
+                items.append(instance.primer_counting_dic[primer_set])
+            items.append(instance.who_am_i())
+            if sample_name in instance.fastq_info_dic:
+                items.append(instance.fastq_info_dic[sample_name]['read_count'])
+                items.append(instance.fastq_info_dic[sample_name]['good_rate'])
+                items.append(instance.fastq_info_dic[sample_name]['r1_mean_len'])
+            else:
+                items.append("NA")
+                items.append("NA")
+                items.append("NA")
+                logging.warning(f"{sample_name} has not fastp info.")
+            if sample_name in instance.meta_info_dic:
+                items.append(instance.meta_info_dic[sample_name]['project_id'])
+                items.append(instance.meta_info_dic[sample_name]['race'])
+                items.append(instance.meta_info_dic[sample_name]['continent'])
+            else:
+                items.append("NA")
+                items.append("NA")
+                items.append("NA")
+                logging.warning(f"{sample_name} has not metadata info.")
+            outfh.write("{0}\n".format("\t".join([str(x) for x in items])))
+        outfh.close()
 
 
     # optional
+    unusable_files = ['unusable_samples.not_v3v4.v240223']
+    unusable_files.append("unusable_samples.low_read_count.v240227")
+    unusable_files.append("unusable_samples.low_read_count.v240308")
+    unusable_files.append("unusable_samples.global4464_race_NA.v240308")
+    unusable_files.append("unusable_samples.global4464_primer_filter.v240308")
     unusable_samples = list()
-    for line in open("unusable_samples_merge"):
-        unusable_samples.append(line.strip())
+    for fn in unusable_files:
+        for line in open(fn):
+            if line.startswith("#"):
+                continue
+            items = line.rstrip('\n').split('\t')
+            if items[0] not in unusable_samples:
+                unusable_samples.append(items[0])
+        #
+    logging.info(f"un-usable samples (n) : {len(unusable_samples)}")
 
     outfn = "samplesheet.csv"
     logging.info(f"write a samplesheet file to run nf-core/ampliseq into {outfn}")
