@@ -4,6 +4,8 @@ from itertools import product
 from Bio import SeqIO
 import gzip
 import csv
+import logging
+logging.basicConfig(level=logging.INFO)
 
 
 class Identifier:
@@ -90,6 +92,10 @@ class Identifier:
         return ';'.join(keys_with_max_value)
 
     def parse_fastp_table(self, fn):
+        if not Path(fn).exists():
+            logging.warning(f"{fn} file is not exists.")
+            return 0
+
         for line in open(fn):
             items = line.rstrip('\n').split('\t')
             if items[0] in ["Samples"]:
@@ -128,8 +134,8 @@ class Identifier:
 
 def main():
     instance = Identifier()
-    instance.load_data_path(Path("../20240206"))
-    instance.load_data_path(Path("../20240126_test"))
+    instance.load_data_path(Path("../890_Koreans"))
+    instance.load_data_path(Path("../1_4464_foreigners"))
     instance.add_primer_info("V3-V4", "CCTACGGGNGGCWGCAG", "GACTACHVGGGTATCTAATCC")
     instance.add_primer_info("V4", "GTGCCAGCMGCCGCGGTAA", "GGACTACHVGGGTWTCTAAT")
     instance.add_primer_info("V1-V3", "AGAGTTTGATCMTGGCTCAG", "CTGCTGCCTYCCGTA")
@@ -141,13 +147,15 @@ def main():
     primer_set_s = ["V3-V4","V4","V1-V3","V4-V5","V5-V6","V6-V8","ITS1","ITS2"]
 
     instance.fastq_info_dic = dict()
-    instance.parse_fastp_table("../20240206/fastp.summary.tsv") # optional
-    instance.parse_fastp_table("../20240126_test/fastp.summary.tsv") # optional
+    instance.parse_fastp_table("../890_Koreans/fastp.summary.tsv") # optional
+    instance.parse_fastp_table("../1_4464_foreigners/fastp.summary.tsv") # optional
 
     instance.meta_info_dic = dict()
-    instance.parse_meta_table("metadata_global.tsv") # optional
+    instance.parse_meta_table("metadata.korea890.tsv") # optional
+    instance.parse_meta_table("metadata_global4464.tsv") # optional
 
     outfn = "result_identifying_16S_primer.xls"
+    logging.info(f"write the result of 16S primer identification into {outfn}")
     outfh = open(outfn, "w")
     items = ["sample_name"]
     items.extend(primer_set_s)
@@ -175,6 +183,7 @@ def main():
             items.append("NA")
             items.append("NA")
             items.append("NA")
+            logging.warning(f"{sample_name} has not fastp info.")
         if sample_name in instance.meta_info_dic:
             items.append(instance.meta_info_dic[sample_name]['project_id'])
             items.append(instance.meta_info_dic[sample_name]['race'])
@@ -183,7 +192,7 @@ def main():
             items.append("NA")
             items.append("NA")
             items.append("NA")
-        print(items)
+            logging.warning(f"{sample_name} has not metadata info.")
         outfh.write("{0}\n".format("\t".join([str(x) for x in items])))
     outfh.close()
 
@@ -194,6 +203,7 @@ def main():
         unusable_samples.append(line.strip())
 
     outfn = "samplesheet.csv"
+    logging.info(f"write a samplesheet file to run nf-core/ampliseq into {outfn}")
     outfh = open(outfn, "w")
     headers = ["sampleID","forwardReads","reverseReads","run"]
     writer = csv.DictWriter(outfh, fieldnames=headers)
@@ -210,6 +220,7 @@ def main():
     outfh.close()
 
     outfn = "metadata.tsv"
+    logging.info(f"write a metadata file to run nf-core/ampliseq into {outfn}")
     outfh = open(outfn, "w")
     headers = ["sampleID","projectID","Race","Continent"]
     outfh.write("{0}\n".format("\t".join(headers)))
